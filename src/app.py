@@ -31,21 +31,26 @@ st.set_page_config(
 
 db.init_db()
 
-# ── Auto-sync once per session ────────────────────────────────────────────────
+# ── Auto-sync only if data is stale ───────────────────────────────────────────
+# Checks the DB (not session state) so repeat visits/app-wake-ups on the same
+# day skip syncing entirely instead of re-running on every new session.
 
-if "synced_this_session" not in st.session_state:
-    st.session_state.synced_this_session = False
+_mn, _mx = db.get_date_range_with_data()
+_yesterday = (date.today() - timedelta(days=1)).isoformat()
+_needs_sync = _mx is None or _mx < _yesterday
 
-if not st.session_state.synced_this_session:
+if _needs_sync:
     _msg = st.empty()
 
     def _auto_progress(msg: str):
         _msg.caption(f"Auto-syncing… {msg}")
 
-    with st.spinner("Syncing Garmin data…"):
-        _result = garmin_sync.sync_recent(days=90, progress_cb=_auto_progress)
+    # Full backfill only when the DB is empty; otherwise a quick catch-up sync.
+    _sync_days = 90 if _mx is None else 5
 
-    st.session_state.synced_this_session = True
+    with st.spinner("Syncing Garmin data…"):
+        _result = garmin_sync.sync_recent(days=_sync_days, progress_cb=_auto_progress)
+
     _msg.empty()
     if "error" in _result:
         st.error(f"Garmin sync failed: {_result['error']}")
