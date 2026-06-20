@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 _DB_URL  = os.getenv("DATABASE_URL")
 _BACKEND = "pg" if _DB_URL else "sqlite"
 

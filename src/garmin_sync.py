@@ -96,19 +96,6 @@ def _parse_daily_summary(raw: dict) -> Optional[dict]:
 
     cal_str = cal if isinstance(cal, str) else cal.get("date", "")[:10] if isinstance(cal, dict) else str(cal)
 
-    stress = {}
-    all_day_stress = raw.get("allDayStress")
-    if all_day_stress:
-        aggs = all_day_stress.get("aggregatorList", [])
-        for a in aggs:
-            if a.get("type") == "AWAKE":
-                stress = a
-                break
-        if not stress and aggs:
-            stress = aggs[0]
-
-    bb = raw.get("bodyBattery") or {}
-
     return {
         "date": cal_str[:10] if len(cal_str) >= 10 else cal_str,
         "total_steps": raw.get("totalSteps"),
@@ -121,13 +108,13 @@ def _parse_daily_summary(raw: dict) -> Optional[dict]:
         "resting_hr": raw.get("restingHeartRate"),
         "min_hr": raw.get("minHeartRate"),
         "max_hr": raw.get("maxHeartRate"),
-        "avg_stress": stress.get("averageStressLevel"),
-        "max_stress": stress.get("maxStressLevel"),
-        "stress_duration_seconds": stress.get("stressDuration"),
-        "body_battery_charged": bb.get("charged"),
-        "body_battery_drained": bb.get("drained"),
-        "body_battery_highest": bb.get("highest"),
-        "body_battery_lowest": bb.get("lowest"),
+        "avg_stress": raw.get("averageStressLevel"),
+        "max_stress": raw.get("maxStressLevel"),
+        "stress_duration_seconds": raw.get("stressDuration"),
+        "body_battery_charged": raw.get("bodyBatteryChargedValue"),
+        "body_battery_drained": raw.get("bodyBatteryDrainedValue"),
+        "body_battery_highest": raw.get("bodyBatteryHighestValue"),
+        "body_battery_lowest": raw.get("bodyBatteryLowestValue"),
         "floors_ascended": raw.get("floorsAscendedInMeters"),
         "raw_json": json.dumps(raw, default=str),
     }

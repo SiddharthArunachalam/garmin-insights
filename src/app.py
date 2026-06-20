@@ -165,6 +165,16 @@ def metric_card(label: str, value, delta=None, suffix: str = ""):
     st.metric(label, f"{value}{suffix}", delta=delta)
 
 
+def _benchmark(value: float, bands: list[tuple[float, str]]) -> str:
+    """bands = [(threshold, label), ...] sorted ascending; returns label for first threshold value is below."""
+    if pd.isna(value):
+        return ""
+    for threshold, label in bands:
+        if value < threshold:
+            return label
+    return bands[-1][1]
+
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 def page_dashboard():
@@ -181,23 +191,42 @@ def page_dashboard():
         st.info("No data yet. Use **Sync Garmin** in the sidebar to pull your data.")
         return
 
+    # ── Top insight — biggest correlation finding, surfaced automatically ──
+    try:
+        findings = correlations.run_weekly_report(90)
+        if findings:
+            top = findings[0]
+            icon = {"positive": "✅", "negative": "⚠️", "neutral": "ℹ️"}.get(top.direction, "ℹ️")
+            st.info(f"{icon} **{top.title}** — {top.detail}")
+    except Exception:
+        pass
+
     # ── KPI row ──
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
-        avg_sleep = sleep_df["total_hours"].mean() if not sleep_df.empty else None
-        st.metric("Avg Sleep", f"{avg_sleep:.1f}h" if avg_sleep else "—")
+        avg_sleep = sleep_df["total_hours"].mean() if not sleep_df.empty else float("nan")
+        st.metric("Avg Sleep", f"{avg_sleep:.1f}h" if pd.notna(avg_sleep) else "—")
+        st.caption(_benchmark(avg_sleep, [(6.5, "Below target"), (7.5, "Near target"), (99, "Meeting target")]))
     with c2:
-        avg_deep = sleep_df["deep_pct"].mean() if not sleep_df.empty else None
-        st.metric("Avg Deep %", f"{avg_deep:.0f}%" if avg_deep else "—", delta="20% target" if avg_deep and avg_deep < 20 else None)
+        avg_deep = sleep_df["deep_pct"].mean() if not sleep_df.empty else float("nan")
+        st.metric("Avg Deep %", f"{avg_deep:.0f}%" if pd.notna(avg_deep) else "—")
+        st.caption(_benchmark(avg_deep, [(15, "Below target"), (20, "Near target"), (99, "Meeting target")]))
     with c3:
-        avg_rhr = daily_df["resting_hr"].mean() if not daily_df.empty else None
-        st.metric("Avg Resting HR", f"{avg_rhr:.0f} bpm" if avg_rhr else "—")
+        avg_rhr = daily_df["resting_hr"].mean() if not daily_df.empty else float("nan")
+        st.metric("Avg Resting HR", f"{avg_rhr:.0f} bpm" if pd.notna(avg_rhr) else "—")
+        st.caption(_benchmark(avg_rhr, [(55, "Athlete-level"), (65, "Excellent"), (75, "Good"), (200, "Elevated")]))
     with c4:
-        avg_stress = daily_df["avg_stress"].mean() if not daily_df.empty else None
-        st.metric("Avg Stress", f"{avg_stress:.0f}/100" if avg_stress else "—")
+        avg_stress = daily_df["avg_stress"].mean() if not daily_df.empty else float("nan")
+        st.metric("Avg Stress", f"{avg_stress:.0f}/100" if pd.notna(avg_stress) else "—")
+        st.caption(_benchmark(avg_stress, [(25, "Low stress"), (40, "Moderate"), (60, "Elevated"), (200, "High stress")]))
     with c5:
+        avg_bb = daily_df["body_battery_highest"].mean() if not daily_df.empty else float("nan")
+        st.metric("Avg Body Battery", f"{avg_bb:.0f}/100" if pd.notna(avg_bb) else "—")
+        st.caption(_benchmark(avg_bb, [(40, "Low recovery"), (60, "Moderate"), (80, "Good"), (200, "Excellent")]))
+    with c6:
         n_workouts = len(activity_df) if not activity_df.empty else 0
         st.metric("Workouts (30d)", n_workouts)
+        st.caption(_benchmark(n_workouts, [(3, "Below WHO min"), (5, "On target"), (999, "High volume")]))
 
     st.divider()
 
@@ -234,6 +263,34 @@ def page_dashboard():
                 yaxis2=dict(title="Stress", side="right", overlaying="y"),
             )
             st.plotly_chart(fig, use_container_width=True)
+
+    # Body battery + steps trend
+    if not daily_df.empty and daily_df["body_battery_highest"].notna().any():
+        col_bb, col_steps = st.columns(2)
+        with col_bb:
+            st.subheader("Body Battery (30 days)")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=daily_df["date"], y=daily_df["body_battery_highest"],
+                name="Peak", fill="tozeroy", line=dict(color="#2ECC71"),
+            ))
+            fig.add_trace(go.Scatter(
+                x=daily_df["date"], y=daily_df["body_battery_lowest"],
+                name="Floor", line=dict(color="#E74C3C"),
+            ))
+            fig.update_layout(height=260, margin=dict(t=10, b=10), yaxis_range=[0, 100])
+            st.plotly_chart(fig, use_container_width=True)
+        with col_steps:
+            if daily_df["total_steps"].notna().any():
+                st.subheader("Daily Steps (30 days)")
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=daily_df["date"], y=daily_df["total_steps"],
+                    marker_color="#00B2A9",
+                ))
+                fig.add_hline(y=8000, line_dash="dash", line_color="gray", annotation_text="8,000 target")
+                fig.update_layout(height=260, margin=dict(t=10, b=10))
+                st.plotly_chart(fig, use_container_width=True)
 
     # Recent workouts table
     if not activity_df.empty:
